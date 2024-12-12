@@ -409,3 +409,51 @@ end;
 이 라벨의 이름을 원하는 위치에 넣어준다.
 예제에서는 루프문을 빠져나가야 하는 상황을 연출해 본 다음에 라벨을 만든다.
 goto문을 루프문 위에 정의해놓고 실행하면 goto로 인해 위로 가고 다시 루프를 가는 무한 반복이 생기므로 무한 반복은 피해야 한다.
+
+
+# NULL구문 (No Operation)
+
+> The `NULL` statement only passes control to the next statement.
+> Some languages refer to such an instruction as a no-op (no operation).
+
+즉, 어느 곳에서나 써도 되는데 아무 의미 없다는 뜻이다.  
+그럴거면 왜 쓰냐고 할 수 있는데, 쓰는 데는 의미가 있긴 하다.
+
+```sql
+begin
+  for fc in (select * from tab)
+    loop
+      dbms_output.put_line(fc.tname);
+      
+      if fc.tname = 'orders' then -- orders라는 테이블 명칭을 받으면 이쪽으로 이동
+        dbms_output.put_line(fc.tname);
+        goto last_mission; -- last_mission으로 가라.
+      else
+        dbms_output.put_line(fc.tname);
+      end if;
+    end loop;
+    
+    <<last_mission>>
+    dbms_output.put_line('Goto move');
+
+    exception when other then
+      null;
+end;
+```
+
+예를 들어, else 문 안에 필요한 내용을 많이 넣었다고 쳤을 때, 이걸 주석처리해야 할 때도 있다.
+그래서 주석을 다 쳐버리면, else 문 안의 내용이 비게 되어 문법 오류가 발생한다.
+
+왜냐하면 else와 end if 사이에 아무것도 없는 걸로 인식되어서 문법 오류가 생긴다.
+
+그럴 경우에 허수아비 놓는다 셈치고 `null`을 집어넣을 수 있다.
+근데 이럴 거면 그냥 지우는 게 코드가 더 깔끔하게 되지 않나?
+
+의외로 exception에서 자주 사용된다.
+```sql
+exception when other then
+  null;
+```
+이렇게 exception이 발생해도 중요한 문장이 아니라는 뜻으로 null을 집어넣는다.
+
+근데 이럴 거면 그냥 지우는 게 맞지 않나 라는 게 내 생각이긴 하다.
