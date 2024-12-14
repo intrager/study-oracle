@@ -383,3 +383,29 @@ begin
     end loop;
 end;
 ```
+
+# GOTO문
+
+GOTO문이 개똥이라지만 그래도 GOTO문을 어떻게 쓰는지를 아는 것은 중요하다.
+이렇게 쓰면 된다는 정도만 확인하고 넘어간다.
+
+```sql
+begin
+  for fc in (select * from tab)
+    loop
+      dbms_output.put_line(fc.name);
+    
+      if fc.tname = 'orders' then -- orders라는 테이블 명칭을 받으면 이쪽으로 이동
+          goto last_mission; -- last_mission으로 가라.
+      end if;
+      
+    end loop;
+    
+    <<last_mission>> -- 예제의 goto문은 아래쪽에 정의했다.
+      dbms_output.put_line('Goto move');
+end;
+```
+
+이 라벨의 이름을 원하는 위치에 넣어준다.
+예제에서는 루프문을 빠져나가야 하는 상황을 연출해 본 다음에 라벨을 만든다.
+goto문을 루프문 위에 정의해놓고 실행하면 goto로 인해 위로 가고 다시 루프를 가는 무한 반복이 생기므로 무한 반복은 피해야 한다.
