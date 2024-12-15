@@ -185,3 +185,44 @@ values ('C002','M002','L','ICE',3,0,sysdate);
 insert into temp_order (customer_id, menu_id, menu_size, menu_ice, quantity, point_use, register_day)
 values ('C003','M004','3000','N',1,3000,sysdate);
 ```
+
+
+# 왜래키, 조인 쿼리 실습
+
+```sql
+-- 외래키 생성
+alter table temp_order
+add constraint fk_temp_order_01 foreign key(customer_id) references customer_info(customer_id);
+
+alter table temp_order
+add constraint fk_temp_order_02 foreign key(menu_id) references menu(menu_id);
+
+alter table real_order
+add constraint fk_real_order_01 foreign key(customer_id) references customer_info(customer_id);
+
+alter table real_order
+add constraint fk_real_order_02 foreign key(menu_id) references menu(menu_id);
+
+-- 외래키 삭제
+alter table temp_order drop constraint fk_temp_order_01;
+alter table temp_order drop constraint fk_temp_order_02;
+alter table real_order drop constraint fk_real_order_01;
+alter table real_order drop constraint fk_real_order_02;
+
+-- 장바구니 쿼리
+select temp_order.*, customer_info.name, customer_info.birth, menu.menu_name, menu.menu_price
+from temp_order
+inner join customer_info
+        on temp_order.customer_id = customer_info.customer_id
+inner join menu
+        on temp_order.menu_id = menu.menu_id;
+        
+-- 주문서 쿼리
+select real_order.order_no, real_order.order_sequence, customer_info.name, customer_info.birth, menu.menu_name, real_order.price, real_order.quantity, real_order.total_price
+from real_order
+inner join customer_info
+        on real_order.customer_id = customer_info.customer_id
+inner join menu
+        on real_order.menu_id = menu.menu_id;
+```
+
