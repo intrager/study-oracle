@@ -660,3 +660,362 @@ begin
       values ('익명PL/SQL', '알 수 없는 오류가 발생했습니다.');
 end;
 ```
+
+# SQLCODE / SQLERRM (코드와 메시지를 가져오자)
+
+## SQLCODE / SQLERRM function 정의
+
+### SQLCODE
+
+> In an exception handler, the `SQLCODE` function returns the numeric code of the exception being handled. (Outside an exception handler, `SQLCODE` returns `0`)
+> For an internally defined exception, the numeric code is the number of the associated Oracle Database error.
+> This number is negative except For a user-defined exception, the numeric code is either + 1 (default) or the error code associated with the exception by the `EXCEPTION_INT` pragma.
+
+> 예외 처리기에서 SQLCODE 함수는 처리 중인 예외의 숫자 코드를 반환한다. (예외 핸들러 외부에서 SQLCODE는 0을 반환한다.)
+> 내부적으로 정의된 예외의 경우 숫자 코드는 연관된 Oracle 데이터베이스 오류의 번호다.
+> 숫자 코드가 100인 "데이터를 찾을 수 없음" 오류를 제외하고 이 숫자는 음수이다.
+
+### SQLERRM
+
+> The SQLERRM function returns the error message associated with an error code.
+>
+> Note:
+> `DBMS_UTILITY.FORMAT_ERROR_STACK` is recommended over `SQLERRM`, unless you see the `FORALL` statement with its `SAVE EXCEPTIONS` clause.
+> For more information, see "Retrieving Error Code and Error Message".
+
+> SQLERRM 함수는 오류 코드와 관련된 오류 메시지를 반환한다.
+>
+> Note:
+> `SAVE EXCEPTIONS` 절과 함께 `FORALL` 문을 사용하지 않는 한 `SQLERRM`보다 `DBMS_UTILITY.FORMAT_ERROR_STACK`을 사용하는 것이 좋다.
+
+![SQLCODE](sqlcode.png)
+
+SQLCODE의 0은 정상처리라고 약속된 상태이다.
+
+
+## 실습
+
+```sql
+declare
+  v_name customer_info.name%type;
+  v_menu_name menu.menu_name%type;
+begin
+    declare
+      block_v varchar2(100) := '블록 변수';
+    begin
+      -- 메뉴명 가져오기
+      select menu_name
+      into v_menu_name
+      from menu
+      where menu_id = 'M0011234'
+      ;
+      dbms_output.put_line('메뉴 : ' || v_menu_name);
+      exception when others then
+      dbms_output.put_line('메뉴 가져오는 구간 오류 발생 - ' || block_v);
+    end;
+  
+  -- 고객명 가져오기
+  select name
+  into v_name
+  from customer_info
+  where customer_id = 'C001'
+  ;
+  
+  dbms_output.put_line('이름 : ' || v_name);
+  dbms_output.put_line('sqlcode : ' || sqlcode); -- sqlcode : 0
+  dbms_output.put_line('sqlerrm : ' || sqlerrm); -- sqlerrm : ORA-0000: normal, successful completion
+  dbms_output.put_line('sqlerrm : ' || sqlerrm(sqlcode)); -- sqlerrm : ORA-0000: normal, successful completion
+
+    exception when others then
+      dbms_output.put_line('오류 발생');
+      insert into logs (name, memo)
+      values ('익명PL/SQL', '알 수 없는 오류가 발생했습니다.');
+end;
+```
+
+`sqlcode`는 정상 실행되었으므로 0을 반환하고, `sqlerrm`은 `sqlcode`값에 따라 반환한다.
+
+sqlerrm은 sqlerrm(sqlcode)와 같다.
+
+각 예외 코드에 따라 에러 메시지도 달라진다.
+
+```sql
+declare
+  v_name customer_info.name%type;
+  v_menu_name menu.menu_name%type;
+begin
+
+      -- 메뉴명 가져오기
+      select menu_name
+      into v_menu_name
+      from menu
+      where menu_id = 'M0011234'
+      ;
+      dbms_output.put_line('메뉴 : ' || v_menu_name);
+
+  -- 고객명 가져오기
+  select name
+  into v_name
+  from customer_info
+  where customer_id = 'C001'
+  ;
+  
+  dbms_output.put_line('이름 : ' || v_name);
+
+    exception when others then
+      dbms_output.put_line('sqlcode : ' || sqlcode); -- sqlcode : 100
+      dbms_output.put_line('sqlerrm : ' || sqlerrm); -- sqlerrm : ORA-01403: no data found
+end;
+```
+
+패키지 내 예외 처리에 sqlcode, sqlerrm을 활용할 수 있다.
+
+```sql
+create or replace PACKAGE BODY PKG_ORDERS AS
+
+  FUNCTION PF_GET_ADDPOINT (
+      P_PRICE IN NUMBER
+  ) RETURN NUMBER AS
+  -- 적립 포인트
+  v_point customer_info.point%type;
+  BEGIN
+      v_point := round(p_price * 0.1);
+      RETURN v_point;
+  Exception when others then
+      return 0;
+  END PF_GET_ADDPOINT;
+
+  PROCEDURE PSP_MAKE_ORDER (
+      P_CUSTOMER_ID IN VARCHAR2 
+    , R_RETURN_CODE OUT VARCHAR2 
+    , R_RETURN_MESSAGE OUT VARCHAR2 
+  ) AS
+    -- real_order 테이블 컬럼 값을 변수로 사용
+    r_real_order real_order%rowtype;
+    
+    -- 옵션가 변수
+    v_price_size menu.menu_price%type;
+    v_price_ice menu_option.option_price%type;
+    BEGIN
+        -- 실행구문
+        -- 1. 장바구니의 자료를 가져온다.
+        -- 2. 장바구니의 개수만큼 loop를 진행한다.
+        for fc in (select * from temp_order where customer_id = nvl(p_customer_id, customer_id))
+        loop
+            -- 3. 주문서에 필요한 기본정보를 가져온다.
+            -- 3-1. 맥주일 경우 미성년자인지 체크한다.
+            dbms_output.put_line(fc.customer_id);
+            -- 기준금액
+            select x.menu_price
+            into r_real_order.price
+            from menu x
+--            where x.menu_id = fc.menu_id;
+        ;
+            -- 4. 옵션가를 가져온다.
+            -- 사이즈 옵션 가격
+            v_price_size := f_get_option_price(fc.menu_id, fc.menu_size);
+            -- 아이스 옵션 가격
+            v_price_ice := f_get_option_price(fc.menu_id, fc.menu_ice);
+        
+            -- 5. 주문금액을 계산한다. (수량 * (기준단가 + 옵션가))
+            -- 주문 단가
+            r_real_order.price := r_real_order.price + v_price_size + v_price_ice;
+            r_real_order.total_price := r_real_order.price * fc.quantity;
+        
+            -- 6. 포인트를 10% 추가한다.
+            r_real_order.point_add := f_get_addpoint(r_real_order.total_price);
+            -- 7. 주문서를 생성한다.
+            insert into real_order (
+                order_sequence
+              , customer_id
+              , menu_id
+              , menu_size
+              , menu_ice
+              , quantity
+              , price
+              , total_price
+              , point_use
+              , point_add
+            ) values (
+                1
+              , fc.customer_id
+              , fc.menu_id
+              , fc.menu_size
+              , fc.menu_ice
+              , fc.quantity
+              , r_real_order.price
+              , r_real_order.total_price
+              , fc.point_use
+              , r_real_order.point_add
+            );
+            -- 8. 개인정보에 포인트를 넣어준다.
+            update customer_info
+            set point = point + r_real_order.point_add
+            where customer_id = fc.customer_id;
+        end loop;
+        r_return_code := to_char(sqlcode);
+        r_return_message := sqlerrm;
+        
+      exception when others then
+        r_return_code := sqlcode;
+        r_return_message := sqlerrm;
+    END PSP_MAKE_ORDER;
+END PKG_ORDERS;
+```
+
+기존에 호출 구문에서 예외처리 하던 거는 없애고 돌리면 다음과 같다.
+
+```sql
+declare
+  r_return_code varchar2(500);
+  r_return_message varchar2(500);
+begin
+    pkg_orders.psp_make_order(null, r_return_code, r_return_message);
+  
+    dbms_output.put_line('r_return_code -> ' || r_return_code); -- r_return_code -> -1422
+    dbms_output.put_line('r_return_message -> ' || r_return_message); -- r_return_message -> ORA-01422: exact fetch returns more than requested number of rows
+  
+  if r_return_code = '0' then
+    commit;
+  else
+    rollback;
+  end if; 
+end;
+```
+
+패키지 내부를 다시 정상으로 돌아가게 수정해놓고 돌리면 다음과 같다.
+
+```sql
+create or replace PACKAGE BODY PKG_ORDERS AS
+
+  FUNCTION PF_GET_ADDPOINT (
+      P_PRICE IN NUMBER
+  ) RETURN NUMBER AS
+  -- 적립 포인트
+  v_point customer_info.point%type;
+  BEGIN
+      v_point := round(p_price * 0.1);
+      RETURN v_point;
+  Exception when others then
+      return 0;
+  END PF_GET_ADDPOINT;
+
+  PROCEDURE PSP_MAKE_ORDER (
+      P_CUSTOMER_ID IN VARCHAR2 
+    , R_RETURN_CODE OUT VARCHAR2 
+    , R_RETURN_MESSAGE OUT VARCHAR2 
+  ) AS
+    -- real_order 테이블 컬럼 값을 변수로 사용
+    r_real_order real_order%rowtype;
+    
+    -- 옵션가 변수
+    v_price_size menu.menu_price%type;
+    v_price_ice menu_option.option_price%type;
+    BEGIN
+        -- 실행구문
+        -- 1. 장바구니의 자료를 가져온다.
+        -- 2. 장바구니의 개수만큼 loop를 진행한다.
+        for fc in (select * from temp_order where customer_id = nvl(p_customer_id, customer_id))
+        loop
+            -- 3. 주문서에 필요한 기본정보를 가져온다.
+            -- 3-1. 맥주일 경우 미성년자인지 체크한다.
+            dbms_output.put_line(fc.customer_id);
+            -- 기준금액
+            select x.menu_price
+            into r_real_order.price
+            from menu x
+            where x.menu_id = fc.menu_id
+            ;
+        
+            -- 4. 옵션가를 가져온다.
+            -- 사이즈 옵션 가격
+            v_price_size := f_get_option_price(fc.menu_id, fc.menu_size);
+            -- 아이스 옵션 가격
+            v_price_ice := f_get_option_price(fc.menu_id, fc.menu_ice);
+        
+            -- 5. 주문금액을 계산한다. (수량 * (기준단가 + 옵션가))
+            -- 주문 단가
+            r_real_order.price := r_real_order.price + v_price_size + v_price_ice;
+            r_real_order.total_price := r_real_order.price * fc.quantity;
+        
+            -- 6. 포인트를 10% 추가한다.
+            r_real_order.point_add := f_get_addpoint(r_real_order.total_price);
+            -- 7. 주문서를 생성한다.
+            insert into real_order (
+                order_sequence
+              , customer_id
+              , menu_id
+              , menu_size
+              , menu_ice
+              , quantity
+              , price
+              , total_price
+              , point_use
+              , point_add
+            ) values (
+                1
+              , fc.customer_id
+              , fc.menu_id
+              , fc.menu_size
+              , fc.menu_ice
+              , fc.quantity
+              , r_real_order.price
+              , r_real_order.total_price
+              , fc.point_use
+              , r_real_order.point_add
+            );
+            -- 8. 개인정보에 포인트를 넣어준다.
+            update customer_info
+            set point = point + r_real_order.point_add
+            where customer_id = fc.customer_id;
+        end loop;
+        r_return_code := to_char(sqlcode);
+        r_return_message := sqlerrm;
+        
+      exception when others then
+        r_return_code := sqlcode;
+        r_return_message := sqlerrm;
+    END PSP_MAKE_ORDER;
+END PKG_ORDERS;
+```
+
+```log
+C001
+C002
+C003
+r_return_code -> 0
+r_return_message -> ORA-0000: normal, successful completion
+```
+
+`sqlerrm`말고 `DBMS_UTILITY.FORMAT_ERROR_STACK`을 활용할 수 있다.
+
+```sql
+declare
+  v_name customer_info.name%type;
+  v_menu_name menu.menu_name%type;
+begin
+
+      -- 메뉴명 가져오기
+      select menu_name
+      into v_menu_name
+      from menu
+      where menu_id = 'M0011234'
+      ;
+      dbms_output.put_line('메뉴 : ' || v_menu_name);
+
+  -- 고객명 가져오기
+  select name
+  into v_name
+  from customer_info
+  where customer_id = 'C001'
+  ;
+  
+  dbms_output.put_line('이름 : ' || v_name);
+
+    exception when others then
+      dbms_output.put_line('sqlcode : ' || sqlcode);
+      dbms_output.put_line('sqlerrm : ' || sqlerrm);
+      dbms_output.put_line('sqlerrm : ' || DBMS_UTILITY.FORMAT_ERROR_STACK);
+end;
+```
+
