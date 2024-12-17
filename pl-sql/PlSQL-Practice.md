@@ -732,3 +732,148 @@ begin
   end if;
 end;
 ```
+
+# Package 생성
+
+## Package Specification
+
+```sql
+CREATE OR REPLACE PACKAGE 패키지명
+AS
+
+/* TODO enter package declarations
+   (types, exceptions, methods etc) here */
+
+-- Function, Procedure 명세 작성
+-- 변수, 커서, 예외
+
+-- 이곳에 선언된 객체만 외부에서 접근이 가능하다.
+
+END 패키지명;
+```
+
+
+예를 들어 아래와 같이 팡숀이나 procedure는 아래와 같이 각각 선언한 부분만 넣는다.
+
+```sql
+create or replace PACKAGE PKG_ORDERS AS 
+
+  /* 포인트 가져오는 펑션 */
+  FUNCTION PF_GET_ADDPOINT (
+      P_PRICE IN NUMBER
+  ) RETURN NUMBER;
+  
+  /* 주문서 만드는 프로시저 */
+  PROCEDURE PSP_MAKE_ORDER (
+      P_CUSTOMER_ID IN VARCHAR2 
+    , R_RETURN_CODE OUT VARCHAR2 
+    , R_RETURN_MESSAGE OUT VARCHAR2 
+  );
+END PKG_ORDERS;
+```
+
+명칭을 만들 때, 어떤 걸 의미하는지 알 수 있도록 본인/팀이 정한대로 써주면 된다.
+
+## Package Body
+
+```sql
+CREATE OR REPLACE PACKAGE BODY 패키지명
+AS
+    FUNCTION 팡숀이름 (
+        파라미터
+    ) RETURN 자료형 IS
+    BEGIN
+        -- statements
+    PROCEDURE 프로시저이름 (
+        파라미터
+    ) IS
+    BEGIN
+        -- statements
+    END 프로시저이름;
+END 패키지명;
+```
+
+위에 만들었던 `PKG_ORDERS`를 SQLDeveloper 툴을 이용하여 본문을 생성하면 다음과 같은 형태가 나온다.
+
+```sql
+CREATE OR REPLACE
+PACKAGE BODY PKG_ORDERS AS
+
+  FUNCTION PF_GET_ADDPOINT (
+      P_PRICE IN NUMBER
+  ) RETURN NUMBER AS
+  BEGIN
+    -- TODO: FUNCTION PKG_ORDERS.PF_GET_ADDPOINT에 대해 구현이 필요합니다.
+    RETURN NULL;
+  END PF_GET_ADDPOINT;
+
+  PROCEDURE PSP_MAKE_ORDER (
+      P_CUSTOMER_ID IN VARCHAR2 
+    , R_RETURN_CODE OUT VARCHAR2 
+    , R_RETURN_MESSAGE OUT VARCHAR2 
+  ) AS
+  BEGIN
+    -- TODO: PROCEDURE PKG_ORDERS.PSP_MAKE_ORDER에 대해 구현이 필요합니다.
+    NULL;
+  END PSP_MAKE_ORDER;
+
+END PKG_ORDERS;
+```
+
+## 외부차단
+
+```sql
+create or replace PACKAGE PKG_ORDERS AS 
+
+  /* 포인트 가져오는 팡숀 */
+--  FUNCTION PF_GET_ADDPOINT (
+--      P_PRICE IN NUMBER
+--  ) RETURN NUMBER;
+  
+  /* 주문서 만드는 프로시저 */
+  PROCEDURE PSP_MAKE_ORDER (
+      P_CUSTOMER_ID IN VARCHAR2 
+    , R_RETURN_CODE OUT VARCHAR2 
+    , R_RETURN_MESSAGE OUT VARCHAR2 
+  );
+END PKG_ORDERS;
+```
+
+이렇게 팡숀 선언 부분을 주석쳐도 바디가 포함된 프로시저에서는 컴파일이 된다.  
+그러나 밖에서는 호출하지 못한다. 밖에서는 팡숀을 선언하지 않은 것처럼 보이므로 에러가 발생한다.
+
+```sql
+-- ORA-00904: "PKG_ORDERS"."PF_GET_ADDPOINT": invalid identifier
+select pkg_orders.pf_get_addpoint(500) from dual;
+```
+
+그러나 패키지 바디 내에서 사용하는 데는 아무 문제가 없다.
+
+가끔 선언했는데 이름이 같은 팡숀/프로시저가 존재해서 오픈 후 접근할 수 있게 만들면 호출할 때 문제가 발생할 수 있다.
+
+이럴 때는 패키지 내부에서만 사용할 수 있도록 선언은 빼고 정의만 해놓을 수 있다.
+
+## 전역변수
+
+패키지 선언부에 전역으로 사용할 수 있는 변수를 둘 수 있다.
+
+```sql
+CREATE OR REPLACE PACKAGE PKG_ORDERS AS
+
+  v_pkg_orders varchar2(500) := 'pkg_orders 패키지는 주문과 관련된 패키지입니다.';
+  ...
+
+END PKG_ORDERS;
+```
+
+사용할 때는 `패키지명.변수명`으로 호출하면 된다.
+
+```sql
+begin
+  dbms_output.put_line(pkg_orders.v_pkg_orders);
+  -- pkg_orders 패키지는 주문과 관련된 패키지입니다.
+end;
+```
+
+메시지를 모아놓는 용도로도 패키지를 사용할 수도 있다.  
+Exception도 리스트를 모아놓고 활용할 수 있다.
