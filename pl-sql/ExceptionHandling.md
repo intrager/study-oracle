@@ -1019,3 +1019,304 @@ begin
 end;
 ```
 
+# Exception : User-Defined Exceptions (RAISE, RAISE_APPLICATION_ERROR)
+
+## 전체 구문 Exception 처리
+
+```sql
+declare
+  -- 변수 선언, 서브 프로그램
+  e_nocoffee EXCEPTION; -- 커피는 예외처리
+begin
+  -- statements
+  RAISE past_due; -- 사용자 정의 오류가 발생함
+exception
+  when 사용자정의 오류 then
+    -- error 메시지
+  when 에러유형 then
+    -- error 메시지
+  when others then
+    -- error 메시지
+end;
+```
+
+```sql
+declare
+    v_name customer_info.name%type;
+    v_menu_name menu.menu_name%type;
+begin
+    -- 메뉴명 가져오기
+    select menu_name
+      into v_menu_name
+    from menu
+    where menu_id = 'M001'
+    ;
+
+    if v_menu_name = '아메리카노' then
+        raise v_exception;
+    end if;
+
+    dbms_output.put_line('메뉴 : ' || v_menu_name);
+exception
+    when v_excpetion then
+        -- 사용자 정의 예외 처리
+    when others then
+        -- Error 메시지
+end;
+```
+
+### RAISE 실습
+
+```sql
+declare
+  v_name customer_info.name%type;
+  v_menu_name menu.menu_name%type;
+  e_beer EXCEPTION; -- 맥주는 예외처리
+begin
+  -- 메뉴명 가져오기
+  select menu_name
+    into v_menu_name
+  from menu
+  where menu_id in ('M005')
+  ;
+  
+  if v_menu_name like '%맥주%' then
+    dbms_output.put_line('예외처리 : ' || v_menu_name); -- 예외처리 : 흑맥주
+    raise e_beer;-- 발생시키는 것이기 때문에 raise, 시스템이 예외처리한 것처럼 예외처리됨
+  end if;  
+  dbms_output.put_line('메뉴 : ' || v_menu_name);
+
+  -- 고객명 가져오기
+  select name
+    into v_name
+  from customer_info
+  where customer_id = 'C001'
+  ; 
+  dbms_output.put_line('이름 : ' || v_name);
+  
+  exception
+    when others then
+      dbms_output.put_line('sqlcode : ' || sqlcode); -- sqlcode : 1
+      dbms_output.put_line('sqlerrm : ' || sqlerrm); -- sqlerrm : User-Defined Exception
+    insert into logs (name, memo)
+    values ('익명 PL/SQL', '알 수 없는 오류가 발생했습니다.');
+end;
+```
+
+### RAISE_APPLICATION_ERROR
+
+#### RAISE Statement
+
+> The `RAISE` statement explicitly raises an exception.
+> Outside an exception handler, you must specify the exception name.
+> Inside an exception handler, if you omit the expcetion name, the `RAISE` statement reraises the current exception.
+
+> RAISE문은 명시적으로 예외를 발생시킨다. 예외 처리기 외부에서는 예외 이름을 지정해야 한다.  
+> 예외 처리기 내에서 예외 이름을 생략하면 RAISE문이 현재 예외를 다시 발생시킨다.
+
+#### RAISE_APPLICATION_ERROR Procedure
+
+> You can invoke the `RAISE_APPLICATION_ERROR` procedure (defined in the `DBMS_STANDARD` package) only from a stored subprogram or method.
+> Typically, you invoke this procedure to raise a user-defined exception and return its error code and error message to the invoker.
+
+> `RAISE_APPLICATION_ERROR` 프로시저 (`DBMS_STANDARD` 패키지에 정의됨)는 저장된 하위 프로그램이나 메서드에서만 호출할 수 있다.
+> 일반적으로 이 프로시저를 호출하여 사용자 정의 예외를 발생시키고 해당 오류 코드와 오류 메시지를 호출자에게 반환한다.
+> The error_code is an integer in the range -20000 .. -20999
+
+```sql
+declare
+  v_name customer_info.name%type;
+  v_menu_name menu.menu_name%type;
+  e_beer EXCEPTION; -- 맥주는 예외처리
+begin
+  -- 메뉴명 가져오기
+  select menu_name
+    into v_menu_name
+  from menu
+  where menu_id in ('M005')
+  ;
+  
+  if v_menu_name like '%맥주%' then
+    dbms_output.put_line('예외처리 : ' || v_menu_name);
+    RAISE_APPLICATION_ERROR(-20055, '맥주는 안 됨');-- 발생시키는 것이기 때문에 raise, 시스템이 예외처리한 것처럼 예외처리됨
+  end if;  
+  dbms_output.put_line('메뉴 : ' || v_menu_name);
+
+  -- 고객명 가져오기
+  select name
+    into v_name
+  from customer_info
+  where customer_id = 'C001'
+  ; 
+  dbms_output.put_line('이름 : ' || v_name);
+  
+  exception
+    when others then
+      dbms_output.put_line('sqlcode : ' || sqlcode);
+      dbms_output.put_line('sqlerrm : ' || sqlerrm);
+    insert into logs (name, memo)
+    values ('익명 PL/SQL', '알 수 없는 오류가 발생했습니다.');
+end;
+```
+
+```sql
+RAISE_APPLICATION_ERROR(-20055, '맥주는 안 됨');
+```
+
+이렇게 에러코드와 에러메시지를 넣어서 활용할 수 있다.
+
+#### 맥주 판매 전 미성년자 유효성 체크하기
+
+```sql
+create or replace PACKAGE BODY PKG_ORDERS AS
+
+  FUNCTION PF_GET_ADDPOINT (
+      P_PRICE IN NUMBER
+  ) RETURN NUMBER AS
+  -- 적립 포인트
+  v_point customer_info.point%type;
+  BEGIN
+      v_point := round(p_price * 0.1);
+      RETURN v_point;
+  Exception when others then
+      return 0;
+  END PF_GET_ADDPOINT;
+  
+  /* 미성년자는 음주 판매 불가 유효성 체크 */
+  function pf_valid_beer (
+      p_customer_id in varchar2 -- 고객 ID
+    , p_menu_id in varchar2 -- 메뉴 ID  
+  ) return varchar2
+  AS
+    r_return_message varchar2(10) := 'OK'; -- OK, NO
+    v_birth customer_info.birth%type;
+  begin
+  
+    -- 미성년자 여부 체크
+    select birth
+      into v_birth
+    from customer_info
+    where customer_id = p_customer_id
+    ;
+    
+    -- 미성년자, 메뉴가 맥주인 것 체크
+    if to_number(to_char(sysdate, 'yyyy'))-to_number(v_birth) < 19 -- 미성년자 이면서
+      and p_menu_id in ('M004', 'M005') -- 맥주를 구매하면
+      then
+      r_return_message := 'NO';
+    end if;
+
+  return r_return_message;
+  
+  exception when others then
+  return r_return_message;
+  end pf_valid_beer;
+
+  PROCEDURE PSP_MAKE_ORDER (
+      P_CUSTOMER_ID IN VARCHAR2 
+    , R_RETURN_CODE OUT VARCHAR2 
+    , R_RETURN_MESSAGE OUT VARCHAR2 
+  ) AS
+    -- real_order 테이블 컬럼 값을 변수로 사용
+    r_real_order real_order%rowtype;
+    
+    -- 옵션가 변수
+    v_price_size menu.menu_price%type;
+    v_price_ice menu_option.option_price%type;    
+    BEGIN
+        -- 실행구문
+        -- 1. 장바구니의 자료를 가져온다.
+        -- 2. 장바구니의 개수만큼 loop를 진행한다.
+        -- 3. 주문서에 필요한 기본정보를 가져온다.
+        for fc in (select * from temp_order where customer_id = nvl(p_customer_id, customer_id))
+        loop
+            -- 3-1. 맥주일 경우 미성년자인지 체크한다.
+            dbms_output.put_line(fc.customer_id);
+            if pkg_orders.pf_valid_beer(fc.customer_id, fc.menu_id) = 'NO' then
+              RAISE_APPLICATION_ERROR(-20055, '미성년자에게 음주 판매는 불가합니다.');
+            end if;
+            
+            -- 기준금액
+            select x.menu_price
+            into r_real_order.price
+            from menu x
+            where x.menu_id = fc.menu_id
+            ;
+        
+            -- 4. 옵션가를 가져온다.
+            -- 사이즈 옵션 가격
+            v_price_size := f_get_option_price(fc.menu_id, fc.menu_size);
+            -- 아이스 옵션 가격
+            v_price_ice := f_get_option_price(fc.menu_id, fc.menu_ice);
+        
+            -- 5. 주문금액을 계산한다. (수량 * (기준단가 + 옵션가))
+            -- 주문 단가
+            r_real_order.price := r_real_order.price + v_price_size + v_price_ice;
+            r_real_order.total_price := r_real_order.price * fc.quantity;
+        
+            -- 6. 포인트를 10% 추가한다.
+            r_real_order.point_add := f_get_addpoint(r_real_order.total_price);
+            -- 7. 주문서를 생성한다.
+            insert into real_order (
+                order_sequence
+              , customer_id
+              , menu_id
+              , menu_size
+              , menu_ice
+              , quantity
+              , price
+              , total_price
+              , point_use
+              , point_add
+            ) values (
+                1
+              , fc.customer_id
+              , fc.menu_id
+              , fc.menu_size
+              , fc.menu_ice
+              , fc.quantity
+              , r_real_order.price
+              , r_real_order.total_price
+              , fc.point_use
+              , r_real_order.point_add
+            );
+            -- 8. 개인정보에 포인트를 넣어준다.
+            update customer_info
+            set point = point + r_real_order.point_add
+            where customer_id = fc.customer_id;
+        end loop;
+        r_return_code := to_char(sqlcode);
+        r_return_message := sqlerrm;
+        
+      exception when others then
+        r_return_code := sqlcode;
+        r_return_message := sqlerrm;
+    END PSP_MAKE_ORDER;
+END PKG_ORDERS;
+```
+
+```sql
+declare
+  r_return_code varchar2(500);
+  r_return_message varchar2(500);
+begin
+  pkg_orders.psp_make_order(null, r_return_code, r_return_message);
+
+  dbms_output.put_line('r_return_code -> ' || r_return_code);
+  dbms_output.put_line('r_return_message -> ' || r_return_message);
+  
+  if r_return_code = '0' then
+    commit;
+  else
+    rollback;
+  end if;
+end;
+```
+
+```log
+C001
+C002
+C003
+r_return_code -> -20055
+r_return_message -> ORA-20055: 미성년자에게 음주 판매는 불가합니다.
+```
