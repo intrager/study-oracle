@@ -328,3 +328,304 @@ PACKAGE BODY PKG_SECTION_SIX AS
     END PSP_SECTION_SIX_ONE;
 END PKG_SECTION_SIX;
 ```
+
+# RECORD 개념 / 활용
+
+
+- 단일필드 변수
+  - v_name varchar2(20)
+  - v_name customer_info.name%type;
+- 전체필드 (ROWTYPE record)
+  - r_customer_info customer_info%type
+- Type Record (사용자 정의)
+  - 
+    ```sql
+      Type recordName IS Record (
+          customer_id varchar2(20)
+        , name customer_info.name%type;
+      )
+    ```
+
+RECORD는 패키지 안에 전역처럼 사용하도록 맨 위에 둘 수도 있고, 필요한 프로시저/팡숀 바로 위에 두고 쓸 수도 있다.
+
+
+예제는 다음과 같다.
+```sql
+declare
+  type DepartmentRecordType IS RECORD (
+    dept_id number(4) not null := 10,
+    dept_name varchar2(30) not null := 'Administration',
+    mgr_id number(6) := 200,
+    loc_id number(4) := 1700
+  );
+  department_record DepartmentRecordType;
+begin
+    dbms_output.put_line('dept_id : ' || department_record.dept_id);
+    dbms_output.put_line('dept_name : ' || department_record.dept_name);
+    dbms_output.put_line('mgr_id : ' || department_record.mgr_id);
+    dbms_output.put_line('loc_id : ' || department_record.loc_id);
+end;
+```
+
+```sql
+CREATE OR REPLACE
+PACKAGE BODY PKG_SECTION_SIX AS
+
+    /* 패키지 내부 전역으로도 사용 가능한 RECORD */
+    TYPE CustomerInfoRecordType IS RECORD (   
+        v_name customer_info.name%type
+      , v_birth customer_info.birth%type
+      , v_mobile customer_info.mobile%type
+      , v_favorite varchar2(100)
+    );
+    ...
+```
+
+프로시저 내에 둔, 즉 다른 위치에 둔 RECORD를 활용한 전체 소스는 다음과 같다.
+
+```sql
+CREATE OR REPLACE
+PACKAGE BODY PKG_SECTION_SIX AS
+
+    -- section 6-1
+    -- functions
+    function pf_get_name1 (
+      p_customer_id in customer_info.customer_id%type
+    ) return varchar2
+    as
+      v_name customer_info.name%type;
+    begin
+      select name
+        into v_name
+      from customer_info
+      where customer_id = p_customer_id;
+      
+      return v_name;
+    end pf_get_name1;
+
+    function pf_get_name2 (
+      p_customer_info in customer_info%rowtype
+    ) return customer_info%rowtype
+    as
+    r_customer_info customer_info%rowtype;
+    begin
+      select *
+        into r_customer_info
+      from customer_info
+      where customer_id = p_customer_info.customer_id
+      ;
+      return r_customer_info;
+    end pf_get_name2;
+
+    -- procedures
+    procedure psp_get_name1 (
+        p_customer_id in customer_info.customer_id%type
+      , v_name out customer_info.name%type
+    )
+    as
+    
+    begin
+      select name
+        into v_name
+      from customer_info
+      where customer_id = p_customer_id;
+    end psp_get_name1;
+
+    procedure psp_get_name2 (
+        p_customer_info in customer_info%rowtype
+      , r_customer_info out customer_info%rowtype
+    )
+    as
+    
+    begin
+      select *
+        into r_customer_info
+      from customer_info
+      where customer_id = p_customer_info.customer_id
+      ;
+    end psp_get_name2;
+
+    PROCEDURE PSP_SECTION_SIX_ONE AS 
+    -- 일반 변수
+    p_customer_id customer_info.customer_id%type;
+    v_name customer_info.name%type;
+
+    -- rowtype 변수
+    p_customer_info customer_info%rowtype;
+    r_customer_info customer_info%rowtype;
+    begin
+        -- 팡숀 구문
+        p_customer_id := 'C005';
+        -- 일반변수 이용
+        v_name := PKG_SECTION_SIX.pf_get_name1(p_customer_id);
+        dbms_output.put_line('v_name > ' || v_name);
+    
+        -- rowtype 이용
+        p_customer_info.customer_id := 'C005';
+        r_customer_info := PKG_SECTION_SIX.pf_get_name2(p_customer_info);
+        dbms_output.put_line('r_customer_info.v_name > ' || r_customer_info.name);
+        
+        -- 프로시저 구문
+        p_customer_id := 'C001';
+        -- 일반변수 이용
+        PKG_SECTION_SIX.psp_get_name1(p_customer_id, v_name);
+        dbms_output.put_line('sp - v_name > ' || v_name);
+    
+        -- rowtype 이용
+        p_customer_info.customer_id := 'C001';
+        PKG_SECTION_SIX.psp_get_name2(p_customer_info, r_customer_info);
+        dbms_output.put_line('sp - r_customer_info.v_name > ' || r_customer_info.name);
+    END PSP_SECTION_SIX_ONE;
+    
+    -- section 6-3
+    
+    -- functions
+    function pf_get_record (
+      p_customer_id in customer_info.customer_id%type
+    ) return varchar2
+    as
+      v_name customer_info.name%type;
+    begin
+      select name
+        into v_name
+      from customer_info
+      where customer_id = p_customer_id;
+      
+      return v_name;
+    end pf_get_record;
+    
+    procedure psp_get_record (
+        p_customer_id in customer_info.customer_id%type
+      , v_name out customer_info.name%type
+      , v_birth out customer_info.birth%type
+      , v_mobile out customer_info.mobile%type
+      , v_favorite out varchar2
+    )
+    as
+      
+    begin
+      select name, birth, mobile, '커피' as favorite
+        into v_name, v_birth, v_mobile, v_favorite
+      from customer_info
+      where customer_id = p_customer_id;
+    end psp_get_record;
+    
+    
+    PROCEDURE PSP_SECTION_SIX_THREE AS 
+        -- 일반 변수
+        p_customer_id customer_info.customer_id%type;
+        
+        TYPE CustomerInfoRecordType IS RECORD (   
+            v_name customer_info.name%type
+          , v_birth customer_info.birth%type
+          , v_mobile customer_info.mobile%type
+          , v_favorite varchar2(100)
+        );
+        -- 레코드 타입 변수
+        customer_info_record CustomerInfoRecordType;
+    begin
+        p_customer_id := 'C004';
+        
+        -- 일반변수 이용
+        pkg_section_six.psp_get_record(p_customer_id, customer_info_record.v_name, customer_info_record.v_birth, customer_info_record.v_mobile, customer_info_record.v_favorite);
+        dbms_output.put_line('v_name : ' || customer_info_record.v_name);
+        dbms_output.put_line('v_birth : ' || customer_info_record.v_birth);
+        dbms_output.put_line('v_mobile : ' || customer_info_record.v_mobile);
+        dbms_output.put_line('v_favorite : ' || customer_info_record.v_favorite);
+    END PSP_SECTION_SIX_THREE;
+END PKG_SECTION_SIX;
+```
+
+RECORD를 활용한 프로시저는 아래와 같이 코드의 중복을 제거할 수 있어 보기 편하게 수정할 수 있다.
+
+```sql
+procedure psp_get_record (
+    p_customer_id in customer_info.customer_id%type
+  , record_customer_info out CustomerInfoRecordType
+)
+...
+```
+
+```sql
+PROCEDURE PSP_SECTION_SIX_THREE AS 
+    -- 일반 변수
+    p_customer_id customer_info.customer_id%type;
+    
+    -- 레코드 타입 변수
+    customer_info_record CustomerInfoRecordType;
+begin
+    p_customer_id := 'C005';
+    
+    -- 일반변수 이용
+    pkg_section_six.psp_get_record(p_customer_id, customer_info_record);
+    dbms_output.put_line('v_name : ' || customer_info_record.v_name);
+    dbms_output.put_line('v_birth : ' || customer_info_record.v_birth);
+    dbms_output.put_line('v_mobile : ' || customer_info_record.v_mobile);
+    dbms_output.put_line('v_favorite : ' || customer_info_record.v_favorite);
+END PSP_SECTION_SIX_THREE;
+```
+
+팡숀도 프로시저에서 활용한 것처럼 비슷하게 이용할 수 있다.
+팡숀은 리턴 타입이 한 개이지만, "RECORD 타입"도 한 개이므로 Java에서의 DTO 타입 객체 반환하듯이 RECORD 타입 자체를 반환할 수 있다.
+
+```sql
+function pf_get_record (
+    p_customer_id in customer_info.customer_id%type
+) return CustomerInfoRecordType
+as
+    -- 레코드 타입 변수
+    customer_info_record CustomerInfoRecordType;
+begin
+    select name, birth, mobile, '커피' as favorite
+      into customer_info_record
+    -- into customer_info_record.v_name, customer_info_record.v_birth, customer_info_record.v_mobile, customer_info_record.v_favorite
+    from customer_info
+    where customer_id = p_customer_id
+    ;
+    
+    return customer_info_record;
+end pf_get_record;
+
+...
+
+PROCEDURE PSP_SECTION_SIX_THREE AS 
+    -- 일반 변수
+    p_customer_id customer_info.customer_id%type;
+    
+    -- 레코드 타입 변수
+    customer_info_record CustomerInfoRecordType;
+begin
+    p_customer_id := 'C001';
+    
+    -- 일반변수 이용
+    customer_info_record := pkg_section_six.pf_get_record(p_customer_id);
+    dbms_output.put_line('v_name : ' || customer_info_record.v_name);
+    dbms_output.put_line('v_birth : ' || customer_info_record.v_birth);
+    dbms_output.put_line('v_mobile : ' || customer_info_record.v_mobile);
+    dbms_output.put_line('v_favorite : ' || customer_info_record.v_favorite);
+END PSP_SECTION_SIX_THREE;
+```
+
+RECORD는 rowtype에 비해 테이블에 한정되지 않고 여러가지 사용자 정의로 활용할 수 있다.
+
+RECORD는 그 안에 있는 변수들을 선언해서 매칭할 수도 있지만, 선언하지 않고 RECORD이름, 변수 타입만 넣어도 매칭할 수 있다.
+
+또한, RECORD는 Specification 부분에도 넣어서 전역으로 활용할 수 있다.
+
+```sql
+create or replace PACKAGE PKG_SECTION_SIX
+AS
+    TYPE CustomerInfoRecordType IS RECORD (   
+        v_name customer_info.name%type
+      , v_birth customer_info.birth%type
+      , v_mobile customer_info.mobile%type
+      , v_favorite varchar2(100)
+    );
+    
+    PROCEDURE PSP_SECTION_SIX_ONE;
+    
+    PROCEDURE PSP_SECTION_SIX_THREE;
+END PKG_SECTION_SIX;
+```
+
+RECORD는 다른 패키지에 있어도 Specification에 있다면 가져와서 사용할 수 있다.
