@@ -219,3 +219,112 @@ begin
     dbms_output.put_line('r_customer_info > ' || r_customer_info.name);
 END SP_SECTION_SIX_ONE;
 ```
+
+### 패키지로 합치기
+
+만들었던 팡숀과 프로시저들은 바디 안에 감추고 `PSP_SECTION_SIX_ONE`만으로 호출할 수 있도록 만들 것이다.
+
+#### Specification
+
+```sql
+create or replace PACKAGE PKG_SECTION_SIX
+AS
+    PROCEDURE PSP_SECTION_SIX_ONE;
+END PKG_SECTION_SIX;
+```
+
+#### Body
+
+```sql
+CREATE OR REPLACE
+PACKAGE BODY PKG_SECTION_SIX AS
+    -- functions
+    function pf_get_name1 (
+      p_customer_id in customer_info.customer_id%type
+    ) return varchar2
+    as
+      v_name customer_info.name%type;
+    begin
+      select name
+        into v_name
+      from customer_info
+      where customer_id = p_customer_id;
+      
+      return v_name;
+    end pf_get_name1;
+
+    function pf_get_name2 (
+      p_customer_info in customer_info%rowtype
+    ) return customer_info%rowtype
+    as
+    r_customer_info customer_info%rowtype;
+    begin
+      select *
+        into r_customer_info
+      from customer_info
+      where customer_id = p_customer_info.customer_id
+      ;
+      return r_customer_info;
+    end pf_get_name2;
+
+    -- procedures
+    procedure psp_get_name1 (
+        p_customer_id in customer_info.customer_id%type
+      , v_name out customer_info.name%type
+    )
+    as
+    
+    begin
+      select name
+        into v_name
+      from customer_info
+      where customer_id = p_customer_id;
+    end psp_get_name1;
+
+    procedure psp_get_name2 (
+        p_customer_info in customer_info%rowtype
+      , r_customer_info out customer_info%rowtype
+    )
+    as
+    
+    begin
+      select *
+        into r_customer_info
+      from customer_info
+      where customer_id = p_customer_info.customer_id
+      ;
+    end psp_get_name2;
+
+    PROCEDURE PSP_SECTION_SIX_ONE AS 
+    -- 일반 변수
+    p_customer_id customer_info.customer_id%type;
+    v_name customer_info.name%type;
+
+    -- rowtype 변수
+    p_customer_info customer_info%rowtype;
+    r_customer_info customer_info%rowtype;
+    begin
+        -- 팡숀 구문
+        p_customer_id := 'C005';
+        -- 일반변수 이용
+        v_name := PKG_SECTION_SIX.pf_get_name1(p_customer_id);
+        dbms_output.put_line('v_name > ' || v_name);
+    
+        -- rowtype 이용
+        p_customer_info.customer_id := 'C005';
+        r_customer_info := PKG_SECTION_SIX.pf_get_name2(p_customer_info);
+        dbms_output.put_line('r_customer_info.v_name > ' || r_customer_info.name);
+        
+        -- 프로시저 구문
+        p_customer_id := 'C001';
+        -- 일반변수 이용
+        PKG_SECTION_SIX.psp_get_name1(p_customer_id, v_name);
+        dbms_output.put_line('sp - v_name > ' || v_name);
+    
+        -- rowtype 이용
+        p_customer_info.customer_id := 'C001';
+        PKG_SECTION_SIX.psp_get_name2(p_customer_info, r_customer_info);
+        dbms_output.put_line('sp - r_customer_info.v_name > ' || r_customer_info.name);
+    END PSP_SECTION_SIX_ONE;
+END PKG_SECTION_SIX;
+```
