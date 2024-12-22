@@ -655,3 +655,249 @@ BEGIN
   end loop;
 END;
 ```
+
+# Collections - 객체(Table, Record, Cursor 등) 사용
+
+## 단순 문자열을 사용하는 경우
+
+### Associative array
+
+```sql
+type Capital is table of varchar2(50) index by varchar2(64);
+city_capital Capital;
+city_capital('한국') := '서울';
+city_capital('프랑스') := '파리';
+city_capital('영국') := '런던';
+```
+
+### Varrays
+
+```sql
+type Capital is varray(10) of varchar2(50);
+city_capital Capital := Capital('서울', '파리', '런던');
+```
+
+### Nested Tables
+
+```sql
+type Capital is table of varchar2(20);
+-- nested table variable initialized with constructor.
+city_capital Capital := Capital('서울', '파리', '런던');
+```
+
+## Collectios 확장 - DB Table 입력
+
+```sql
+type Capital is table of varchar2(20); -- varchar2(20) 문자열
+type Capital is table of customer_info%rowtype; -- customer_info table
+```
+
+### Sample1
+
+```sql
+declare
+    type nl_customer_info is table of customer_info%rowtype;
+    l_customer_info nl_customer_info := nl_customer_info(); -- 초기화
+begin
+    for fc in (select * from customer_info)
+    loop
+        l_customer_info.extend;
+        l_customer_info(l_customer_info.last).customer_id := fc.customer_id;
+        l_customer_info(l_customer_info.last).name := fc.name;
+        l_customer_info(l_customer_info.last).birth := fc.birth;
+
+        dbms_output.put_line(fc.customer_id);
+    end loop;
+
+    dbms_output.put_line(chr(10) || chr(13));
+
+    for idx in l_customer_info.first .. l_customer_info.count
+    loop
+        dbms_output.put_line(l_customer_info(idx).customer_id);
+        dbms_output.put_line(l_customer_info(idx).name);
+        dbms_output.put_line(chr(10) || chr(13));
+    end loop;
+end;
+```
+
+위의 pl/sql문에서 대량의 데이터를 처리할 경우에는 `bulk collect into forall`을 사용하면 좋다.
+`extend`나 `last`를 사용하지 않아도 편하게 같은 기능을 기대할 수 있다.
+
+### Sample2
+
+```sql
+declare
+    type nl_customer_info is table of customer_info%rowtype;
+    l_customer_info nl_customer_info := nl_customer_info(); -- 초기화
+begin
+    select *
+    bulk collect into l_customer_info
+    from customer_info;
+    
+    for idx in l_customer_info.first .. l_customer_info.count
+    loop
+        dbms_output.put_line(l_customer_info(idx).customer_id);
+        dbms_output.put_line(l_customer_info(idx).name);
+    end loop;
+end;
+```
+
+`bulk collect into`를 쓰면 Collection 타입의 값을 한 번에 집어넣을 수 있다.
+
+#### bulk insert 테스트
+
+##### 테스트 테이블 생성
+
+```sql
+create table customer_info_temp as select * from customer_info;
+
+delete from customer_info_temp;
+```
+
+##### for문을 이용하여 bulk insert했던 데이터 temp 테이블에 insert
+
+```sql
+declare
+    type nl_customer_info is table of customer_info%rowtype;
+    l_customer_info nl_customer_info := nl_customer_info(); -- 초기화
+begin
+    select *
+    bulk collect into l_customer_info
+    from customer_info;
+    
+    for idx in l_customer_info.first .. l_customer_info.count
+    loop
+        insert into customer_info_temp (
+            customer_id
+          , name
+          , birth
+          , mobile
+          , point
+          , register_day
+        ) values (
+            l_customer_info(idx).customer_id
+          , l_customer_info(idx).name
+          , l_customer_info(idx).birth
+          , l_customer_info(idx).mobile
+          , l_customer_info(idx).point
+          , l_customer_info(idx).register_day
+        );
+    end loop;
+end;
+```
+
+위의 구문에서는 for문에 loop, end loop문으로 감쌌지만, `forall`로 하면 감쌀 필요가 없어진다.
+`forall`은 `bulk insert into`와는 상관없다.
+
+`forall`은 record 타입의 값을 한꺼번에 집어넣는 역할을 한다.  
+collection 변수 타입의 값을 한꺼번에 넣을 수 있는 기능이다.
+또한, 하나의 dml만 처리할 수 있다.
+
+```sql
+declare
+    type nl_customer_info is table of customer_info%rowtype;
+    l_customer_info nl_customer_info := nl_customer_info(); -- 초기화
+begin
+    select *
+    bulk collect into l_customer_info
+    from customer_info;
+    
+    forall idx in l_customer_info.first .. l_customer_info.count
+        insert into customer_info_temp (
+            customer_id
+          , name
+          , birth
+          , mobile
+          , point
+          , register_day
+        ) values (
+            l_customer_info(idx).customer_id
+          , l_customer_info(idx).name
+          , l_customer_info(idx).birth
+          , l_customer_info(idx).mobile
+          , l_customer_info(idx).point
+          , l_customer_info(idx).register_day
+        );
+end;
+```
+
+![sql과PLSQL의영역](plsqlAndSqlArea.png)
+
+> 그냥 for in에 loop문을 써도 될텐데 왜 `bulk insert`, `forall`이 나온 걸까?
+>
+> Oracle Database 개발자가 작성하는 거의 모든 프로그램에는 PL/SQL 및 SQL문이 모두 포함되어 있다.
+> PL/SQL문은 PL/SQL문 실행기에 의해 실행된다.
+> SQL문은 SQL문 실행 프로그램에 의해 실행된다.
+> PL/SQL 런타임 엔진은 SQL문을 발견하면 중지하고 SQL문을 SQL 엔진으로 전달한다.
+> SQL 엔진은 SQL문을 실행하고 정보를 다시 PL/SQL 엔진으로 반환한다.
+> 이러한 제어 전송을 컨텍스트 스위치라고 하며, 이러한 스위치 각각은 프로그램의 전체 성능을 저하시키는 오버헤드를 발생시킨다.
+
+```sql
+declare
+
+begin
+    for fc in (select * from customer_info) -- 소량의 데이터를 넣을 때는 괜찮지만, 대량의 데이터를 넣을 때는 위험하다.
+    loop
+        insert into customer_info_temp (
+            customer_id
+          , name
+          , birth
+          , mobile
+          , point
+          , register_day
+        ) values (
+            fc.customer_id
+          , fc.name
+          , fc.birth
+          , fc.mobile
+          , fc.point
+          , fc.register_day
+        )
+    end loop;
+end;
+```
+
+대량의 처리가 필요한 경우에는 `bulk insert`, `forall` 등의 기능을 활용하면 좋다.
+
+## Collections - Bulk collect into - limit
+
+Array에 100만처럼 대량의 데이터를 집어넣는다면, Array 객체의 사이즈가 커질수록 메모리의 부담이 증가한다.
+이에 대한 해결책으로는 `limit`이 있다.
+
+`limit`을 사용하면 `bulk insert`등을 할 때 한 번에 넣지 않고 필요에 따라 메모리에 부담되지 않게 처리하면서 빠른 처리를 기대할 수 있다.
+
+### limit Sample
+
+```sql
+declare
+    type nl_customer_info is table of customer_info%rowtype;
+    l_customer_info nl_customer_info := nl_customer_info();
+
+    my_cursor sys_refcursor; -- weak cursor variable
+begin
+    open my_cursor for select * from customer_info;
+
+    loop
+    fetch my_cursor bulk collect into l_customer_info limit 2; -- 2개씩 가져와서 친다
+        forall idx in l_customer_info.first .. l_customer_info.count
+            insert into customer_info_temp (
+                customer_id
+              , name
+              , birth
+              , mobile
+              , point
+              , register_day  
+            ) values (
+                l_customer_info(idx).customer_id
+              , l_customer_info(idx).name
+              , l_customer_info(idx).birth
+              , l_customer_info(idx).mobile
+              , l_customer_info(idx).point
+              , l_customer_info(idx).register_day  
+            );
+    exit when my_cursor%notfound;
+    end loop;
+
+    close my_cursor;
+end;
+```
