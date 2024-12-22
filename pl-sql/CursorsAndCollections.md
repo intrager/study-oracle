@@ -498,3 +498,160 @@ END PKG_COMMON;
 ```
 
 이렇게 선언한 커서는 LOOP를 돌리지 않은 FETCH를 써서 한 행만 가져오도록, RECORD SET보다 유연하게 사용할 수 있다.
+
+# Collections 개념
+
+Cursor와 Collection은 배열처럼 아래로 내용을 multi row로 가져갈 수 있다는 공통점이 있다.
+
+## Associative
+
+```sql
+type Capital is table of varchar2(50) -- Associative array type
+--              index by varchar2(50);   -- char type indexed by string
+                index by pls_integer;    -- only number type key
+```
+
+
+```sql
+/* Associative array Sample */
+declare
+    -- Associative array indexed by string:
+    
+    type Capital is table of varchar2(50) -- Associative array type, value
+                 index by varchar2(50);   -- indexed by string, key
+    city_capital Capital;                 -- Associative array variable
+    v_index varchar2(50);                 -- Scalar variable
+begin
+    -- Add elements (key-value pairs) to associative array:
+    
+    city_capital('한국') := '서울';
+    city_capital('프랑스') := '파리';
+    city_capital('영국') := '런던';
+    
+    dbms_output.put_line(city_capital('한국'));
+    
+    -- print associative array:
+    v_index := city_capital.first; -- get first element of array
+    while v_index is not null loop
+        dbms_output.put_line('population of ' || v_index || ' is ' || city_capital(v_index));
+        v_index := city_capital.next(v_index); -- get next element of array
+    end loop;
+end;
+```
+
+
+## Varray
+
+Associative와 기능이 거의 동일하지만 Varray는 크기를 꼭 선언해야 한다.  
+또한 loop문을 이용하여 개수만큼 값을 가져온다.
+
+```sql
+type Capital is varray(10) of varchar2(50);
+```
+
+```sql
+/* Varrays (Variable-Size Arrays) Sample */
+declare
+    type Capital is varray(10) of varchar2(50); -- Varrays (Variable-Size Arrays) type
+    city_capital Capital := Capital('서울', '파리', '런던'); -- Varrays variable
+begin
+    for i in 1..city_capital.count loop
+        dbms_output.put_line(city_capital(i));
+    end loop;
+end;
+```
+
+## Nested Table
+
+```sql
+/* Nested Tables Sample */
+declare
+    type Capital is table of varchar2(20); -- nested table type
+
+    -- nested table variable initialized with constructor:
+    city_capital Capital := Capital('서울', '파리', '런던');
+begin
+    for i in city_capital.first .. city_capital.last loop -- for first to last element
+        dbms_output.put_line(city_capital(i));
+    end loop;
+
+    dbms_output.put_line('---');
+end;
+```
+
+
+## 공통 코드로 실습
+
+### 패키지 헤더(Specification)
+
+```sql
+create or replace PACKAGE PKG_COMMON AS 
+
+  /* 패키지 내부 전역 레코드 - section 6 */
+  type CustomerInfoRecordType is record (
+      v_name customer_info.name%type
+    , v_birth customer_info.birth%type
+    , v_mobile customer_info.mobile%type
+    , v_favorite varchar2(100)
+  );
+  
+  /* weak type */
+  type return_cursor is ref cursor;
+  
+  /* strong type cursor - section 7 */
+  type customer_current_type is ref cursor return customer_info%rowtype; 
+  
+  type record_cursor is ref cursor return CustomerInfoRecordType;
+
+  /* Associative array */
+  type Capital is table of varchar2(50) -- Associative array type
+                  index by varchar2(50); -- char type indexed by string
+               -- index by pls_integer; -- only number type key
+  -- city_capital Capital := Capital('한국' => '서울'); -- 이거는 12g부터 가능한 문법
+  
+  PROCEDURE set_city_capital(cities Capital);
+  FUNCTION get_city_capital RETURN Capital;
+  
+END PKG_COMMON;
+```
+
+### 패키지 바디
+
+```sql
+create or replace PACKAGE BODY PKG_COMMON AS
+    city_capital Capital;
+    
+    PROCEDURE set_city_capital(cities Capital) IS
+    BEGIN
+        city_capital := cities;
+    END set_city_capital;
+    
+    FUNCTION get_city_capital RETURN Capital IS
+    BEGIN
+        RETURN city_capital;
+    END get_city_capital;
+END PKG_COMMON;
+```
+
+### 호출 블럭 구문
+
+```sql
+DECLARE
+  temp_city_capital PKG_COMMON.Capital;
+  v_index varchar2(50);    -- Scalar variable
+BEGIN
+  temp_city_capital('한국') := '서울';
+  temp_city_capital('프랑스') := '파리';
+  temp_city_capital('영국') := '런던';
+  
+  PKG_COMMON.set_city_capital(temp_city_capital);
+  
+  dbms_output.put_line(temp_city_capital('한국'));
+  -- print associative array:
+  v_index := temp_city_capital.first; -- get first element of array
+  while v_index is not null loop
+      dbms_output.put_line('population of ' || v_index || ' is ' || temp_city_capital(v_index));
+      v_index := temp_city_capital.next(v_index); -- get next element of array
+  end loop;
+END;
+```
