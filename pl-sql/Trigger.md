@@ -432,3 +432,76 @@ n = 5
 아까와는 다르게 잘 실행된 것을 확인할 수 있다.
 `compound`는 mutating 오류에 대비할 수 있는 유용한 기능이다.
 
+# DDL Trigger
+
+툴을 이용해 트리거 코드를 만들어봤다.
+
+drop과 truncate를 활용해 볼 것이다.
+
+```sql
+CREATE OR REPLACE TRIGGER TRIGGER_DROP 
+BEFORE
+DROP OR TRUNCATE ON INFLEARN.SCHEMA -- INFLEARN유저의 스키마에 해당하는 drop과 truncate가 일어나면 행동해라
+BEGIN
+  -- 어떤 DROP도 TRUNCATE도 일어나지 않게 된다.
+  RAISE_APPLICATION_ERROR(-20001, 'Warning !! Warning !! Warning !! This command cannot be executed. !!');
+END;
+```
+
+예시로 `logs`라는 테이블을 drop하려 한다면 아래와 같은 에러가 발생한다.
+
+```sql
+drop table logs;
+```
+
+```log
+ORA-00604: error occurred at recursive SQL level 1
+ORA-20001: Warning !! Warning !! Warning !! This command cannot be executed. !!
+ORA-06512: at line 3
+00604. 00000 -  "error occurred at recursive SQL level %s"
+*Cause:    An error occurred while processing a recursive SQL statement
+           (a statement applying to internal dictionary tables).
+*Action:   If the situation described in the next error on the stack
+           can be corrected, do so; otherwise contact Oracle Support.
+```
+
+아래 구문도 실행하면 같은 오류가 발생한다.
+
+```sql
+truncate table logs;
+```
+
+트리거에다가 `ora_dict_obj_name`과 `ora_dict_obj_type`를 로그찍으면 어떤 타입의 어떤 이름인지에 대한 정보를 기록할 수 있다.
+
+테이블에만 해당되는 게 아닌 인덱스, 팡숀 등의 오브젝트에도 활용할 수 있다.
+
+```sql
+CREATE OR REPLACE TRIGGER TRIGGER_DROP 
+BEFORE
+DROP ON INFLEARN.SCHEMA -- INFLEARN유저의 스키마에 해당하는 drop이 일어나면 행동해라
+BEGIN
+  dbms_output.put_line('ora_dict_obj_name >'|| ora_dict_obj_name); 
+  dbms_output.put_line('ora_dict_obj_type >'|| ora_dict_obj_type); 
+  -- 그 어떤 DROP도 일어나지 않게 된다.
+  RAISE_APPLICATION_ERROR(-20001, 'Warning !! Warning !! Warning !! This command cannot be executed. !!');
+END;
+```
+
+만약 이러한 트리거를 테이블만 적용하고 싶다면 if 조건문으로 테이블만 거르도록 설정할 수 있다.
+
+```sql
+CREATE OR REPLACE TRIGGER TRIGGER_DROP 
+BEFORE
+DROP ON INFLEARN.SCHEMA -- INFLEARN유저의 스키마에 해당하는 drop이 일어나면 행동해라
+BEGIN
+  dbms_output.put_line('ora_dict_obj_name >'|| ora_dict_obj_name); 
+  dbms_output.put_line('ora_dict_obj_type >'|| ora_dict_obj_type); 
+  if ora_dict_obj_type in ('table') then
+    -- 그 어떤 DROP도 일어나지 않게 된다.
+    RAISE_APPLICATION_ERROR(-20001, 'Warning !! Warning !! Warning !! This command cannot be executed. !!');
+  end if;
+END;
+```
+
+`ora_dict_obj_type` 말고 `ora_dict_obj_name`으로 이름을 따로 하드코딩해서 DDL에 대한 제한을 걸 수 있다.
+
