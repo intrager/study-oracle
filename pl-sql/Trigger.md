@@ -303,3 +303,132 @@ create or replace trigger trigger_customer_info
 
 값을 변경하는 순간 트리거가 발동되어 로그 테이블에 새 포인트 값과 기존 포인트 값 데이터가 들어간다.
 
+# Compound DML Trigger
+
+> A compound DML trigger created on a table or editioning view can fire at multiple timing points.
+
+> 복합 트리거는 여러 타이밍 지점에서 실행 가능하다.
+
+
+트리거는 테이블에 변화가 발생했을 때 이벤트가 발생한다.  
+그런데 변화하는 이 값을 가지고 오려고 하면 오류가 발생한다.
+
+```sql
+update customer_info
+set point = 300
+;
+```
+
+```log
+ORA-04091: table INFLEARN.CUSTOMER_INFO is mutating, trigger/function may not see it
+ORA-06512: at "INFLEARN.TRIGGER_CUSTOMER_INFO", line 9
+ORA-04088: error during execution of trigger 'INFLEARN.TRIGGER_CUSTOMER_INFO'
+```
+
+발생 시킬려고 해서 발생하는 게 아니고, 자동으로 오류가 발생한다.
+
+이는 테이블의 값에 대해 dml을 하는 도중 바라보려고 하기 때문에 발생하는 오류이다.
+
+```sql
+create or replace trigger trigger_customer_info
+    before
+    delete or insert or update on customer_info -- 3개 모두 or로 사용 가능
+    for each row
+    declare
+        n number;
+    begin
+        if inserting then dbms_output.put_line('trigger_departments_before - insert');
+        elsif updating then dbms_output.put_line('trigger_departments_before - update');
+        elsif deleting then RAISE_APPLICATION_ERROR(-20001, 'Dont delete this table');
+        end if;
+        
+        select count(*)
+          into n
+        from customer_info;
+        
+        dbms_output.put_line('customer_info count -> ' || n);
+    end;
+```
+
+`for each row`옵션이 설정되어 있으므로 테이블의 맨 첫 번째 데이터를 가져온다. 이때 데이터 한 행을 가져온 후에 select를 타게 된다. 그런데 아직 2, 3번이 안 끝났기 때문에 select를 해서는 안 된다.  
+왜? 뒤에 delete를 할지, update로 값이 변할지 알 수 없기 때문이다. 즉, 값이 변할 수 있는 가능성이 있기 때문에 이 내용이 허용되지 않는다.
+
+`for each row` 옵션을 끄면 한 테이블 뭉탱이로 쳐지면서 dml문 다 실행한 뒤 select문으로 조회되기 때문에 정상적으로 실행된다.
+
+실행되고 dml 처리한 뒤 조회하는 트리거가 필요하다면 또 만들면 되지만, 그러지 않고 `compound`를 활용할 수 있다.
+
+```sql
+create or replace trigger trigger_compound_customer_info
+    for delete or insert or update on customer_info
+    compound trigger
+        -- 변수 선언
+        n number;
+        v_birth customer_info.birth%type;
+
+    after each row is
+    begin
+        if inserting then
+            dbms_output.put_line('trigger_departments_before - insert');
+        elsif updating then
+            dbms_output.put_line('trigger_departments_before - update');
+        end if;
+    end after each row;
+
+    after statement is
+    begin
+        select count(*)
+          into n
+        from customer_info
+        ;
+
+        dbms_output.put_line('n = ' || n);
+        if deleting then
+            RAISE_APPLICATION_ERROR(-20001, 'Dont delete this table');
+        end if;
+    end after statement;
+end trigger_compound_customer_info;
+```
+
+기존에 있던 `trigger_customer_info` 트리거는 비활성화시킨다.
+
+```sql
+after each row is
+```
+
+중간에 있는 이 `after each row` 구문은 `for each row`와 같다. 데이터 행 하나 처리할 때마다 쓴다는 의미다.
+
+`after statement`는 명령문에 해당할 때 사용한다.
+
+실행하면 다음과 같이 수행된다.
+
+`after each row`구문에서는 로그를 찍을 거고 `after statement`구문에서는 값을 select해서 가져올 거다.
+
+```sql
+after statement is
+    begin
+        select count(*)
+          into n
+        from customer_info
+        ;
+
+        dbms_output.put_line('n = ' || n);
+        if deleting then
+            RAISE_APPLICATION_ERROR(-20001, 'Dont delete this table');
+        end if;
+end after statement;
+```
+
+두 구문이 한꺼번에 실행될 것이다.
+
+```log
+trigger_departments_before - update
+trigger_departments_before - update
+trigger_departments_before - update
+trigger_departments_before - update
+trigger_departments_before - update
+n = 5
+```
+
+아까와는 다르게 잘 실행된 것을 확인할 수 있다.
+`compound`는 mutating 오류에 대비할 수 있는 유용한 기능이다.
+
